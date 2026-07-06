@@ -236,11 +236,9 @@ with right:
 
 ---
 
-Model: **YOLOv11**
+Model: **YOLOv8**
 
 Device: **CPU**
-
-Confidence: **0.25**
 """)
 
 # ==========================================
