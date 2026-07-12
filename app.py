@@ -185,7 +185,7 @@ to{opacity:1;transform:translateY(0);}
 <div class="circle3"></div>
 
 <div class="title">
-🌾 Wheat Detection using YOLOv11
+🌾 Wheat Detection using YOLOv8
 </div>
 
 <div class="subtitle">
@@ -297,7 +297,7 @@ with right:
 
 ---
 
-Model: **YOLOv11**
+Model: **YOLOv8**
 
 Device: **CPU**
 
@@ -561,7 +561,7 @@ st.markdown(
     """
     <center>
         <h5>
-            🌾 Built with Streamlit + YOLOv11 + Ultralytics
+            🌾 Built with Streamlit + YOLOv8 + Ultralytics
         </h5>
     </center>
     """,
