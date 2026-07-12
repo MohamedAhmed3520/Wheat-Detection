@@ -4,10 +4,16 @@ import torch.nn as nn
 from ultralytics import YOLO
 from ultralytics.nn.tasks import DetectionModel
 from ultralytics.nn.modules.conv import Conv
+
 import cv2
 import numpy as np
 from PIL import Image
+
+import tempfile
+import os
 import time
+
+from io import BytesIO
 
 # ==========================================
 # Fix for PyTorch 2.6+
@@ -40,17 +46,20 @@ st.markdown("""
 }
 
 /* Hide Streamlit Branding */
+
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
 header {visibility:hidden;}
 
 /* Main Container */
+
 .block-container{
     padding-top:2rem;
     padding-bottom:2rem;
 }
 
 /* Title */
+
 .title{
     text-align:center;
     font-size:55px;
@@ -60,6 +69,7 @@ header {visibility:hidden;}
 }
 
 /* Subtitle */
+
 .subtitle{
     text-align:center;
     font-size:20px;
@@ -104,6 +114,7 @@ header {visibility:hidden;}
 }
 
 /* Upload Area */
+
 [data-testid="stFileUploader"]{
     border:2px dashed #2d6a4f;
     border-radius:20px;
@@ -128,19 +139,19 @@ header {visibility:hidden;}
     box-shadow:0 8px 18px rgba(0,0,0,.2);
 }
 
-/* Images */
-
-img{
-    border-radius:18px;
-}
-
-/* Card */
+/* Cards */
 
 .card{
     background:white;
     padding:20px;
     border-radius:18px;
     box-shadow:0px 10px 25px rgba(0,0,0,.08);
+}
+
+/* Images */
+
+img{
+    border-radius:18px;
 }
 
 /* Animations */
@@ -178,7 +189,7 @@ to{opacity:1;transform:translateY(0);}
 </div>
 
 <div class="subtitle">
-Upload an image and let AI automatically detect wheat heads.
+Upload an image or a video and let AI automatically detect wheat heads.
 </div>
 
 """, unsafe_allow_html=True)
@@ -202,45 +213,115 @@ left, right = st.columns([1,1])
 
 with left:
 
-    st.markdown("## 📤 Upload Image")
+    st.markdown("## 📤 Upload Image / Video")
 
     uploaded_file = st.file_uploader(
         "",
-        type=["jpg","jpeg","png"]
+        type=[
+            "jpg",
+            "jpeg",
+            "png",
+            "mp4",
+            "avi",
+            "mov",
+            "mkv"
+        ]
     )
 
-    if uploaded_file is not None:
+image = None
+video_path = None
+is_video = False
+
+if uploaded_file is not None:
+
+    extension = uploaded_file.name.split(".")[-1].lower()
+
+    # ---------------- Image ----------------
+
+    if extension in ["jpg","jpeg","png"]:
 
         image = Image.open(uploaded_file).convert("RGB")
 
-        st.image(
-            image,
-            caption="Uploaded Image",
-            use_container_width=True
+        with left:
+            st.image(
+                image,
+                caption="Uploaded Image",
+                use_container_width=True
+            )
+
+    # ---------------- Video ----------------
+
+    else:
+
+        is_video = True
+
+        temp_video = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=f".{extension}"
         )
+
+        temp_video.write(uploaded_file.read())
+        temp_video.close()
+
+        video_path = temp_video.name
+
+        with left:
+            st.video(video_path)
+
+# ==========================================
+# Instructions
+# ==========================================
 
 with right:
 
     st.markdown("## ℹ️ Instructions")
 
     st.info("""
-### Steps
 
-1. Upload your wheat image.
+### Supported Files
 
-2. Click **Detect Wheat**.
+✅ JPG
 
-3. Wait a few seconds.
+✅ PNG
 
-4. View the detection result.
+✅ MP4
+
+✅ AVI
+
+✅ MOV
+
+✅ MKV
 
 ---
 
-Model: **YOLOv8**
+1. Upload an image or video.
+
+2. Click Detect Wheat.
+
+3. Wait for processing.
+
+4. Download the result.
+
+---
+
+Model: **YOLOv11**
 
 Device: **CPU**
+
 """)
 
+# ==========================================
+# Helper Function
+# ==========================================
+
+def count_detections(results):
+    total = 0
+
+    for r in results:
+        if r.boxes is not None:
+            total += len(r.boxes)
+
+    return total
 # ==========================================
 # Detection
 # ==========================================
@@ -251,69 +332,231 @@ if uploaded_file is not None:
 
         progress = st.progress(0)
 
-        for i in range(100):
-            time.sleep(0.01)
-            progress.progress(i+1)
+        start_time = time.time()
 
-        with st.spinner("🤖 AI is analyzing the image..."):
+        # ======================================================
+        # IMAGE DETECTION
+        # ======================================================
 
-            img = np.array(image)
+        if not is_video:
 
-            results = model.predict(
-                img,
-                conf=0.25,
-                verbose=False
+            with st.spinner("🤖 AI is analyzing image..."):
+
+                img = np.array(image)
+
+                results = model.predict(
+                    img,
+                    conf=0.25,
+                    verbose=False
+                )
+
+                annotated = results[0].plot()
+
+                annotated = cv2.cvtColor(
+                    annotated,
+                    cv2.COLOR_BGR2RGB
+                )
+
+                result = Image.fromarray(annotated)
+
+                total_boxes = count_detections(results)
+
+            progress.progress(100)
+
+            elapsed = time.time() - start_time
+
+            st.success("✅ Detection Completed!")
+
+            st.balloons()
+
+            st.markdown("---")
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+
+                st.subheader("📷 Original Image")
+
+                st.image(
+                    image,
+                    use_container_width=True
+                )
+
+            with c2:
+
+                st.subheader("🎯 Detection Result")
+
+                st.image(
+                    result,
+                    use_container_width=True
+                )
+
+            st.markdown("### 📊 Statistics")
+
+            a, b, c = st.columns(3)
+
+            a.metric("🌾 Wheat Heads", total_boxes)
+            b.metric("⏱ Time", f"{elapsed:.2f} sec")
+            c.metric("💻 Device", "CPU")
+
+            buffer = BytesIO()
+
+            result.save(
+                buffer,
+                format="PNG"
             )
 
-            annotated = results[0].plot()
-
-            annotated = cv2.cvtColor(
-                annotated,
-                cv2.COLOR_BGR2RGB
+            st.download_button(
+                "⬇️ Download Result",
+                data=buffer.getvalue(),
+                file_name="prediction.png",
+                mime="image/png"
             )
 
-            result = Image.fromarray(annotated)
+        # ======================================================
+        # VIDEO DETECTION
+        # ======================================================
 
-        progress.empty()
+        else:
 
-        st.success("✅ Detection Completed!")
+            with st.spinner("🎥 Processing Video..."):
 
-        st.balloons()
+                cap = cv2.VideoCapture(video_path)
 
-        st.markdown("---")
+                fps = cap.get(cv2.CAP_PROP_FPS)
 
-        col1, col2 = st.columns(2)
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
-        with col1:
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-            st.subheader("📷 Original Image")
+                total_frames = int(
+                    cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                )
 
-            st.image(
-                image,
-                use_container_width=True
+                output_path = "prediction_video.mp4"
+
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+
+                writer = cv2.VideoWriter(
+                    output_path,
+                    fourcc,
+                    fps,
+                    (width, height)
+                )
+
+                frame_counter = 0
+
+                total_detections = 0
+
+                preview = st.empty()
+
+                while True:
+
+                    ret, frame = cap.read()
+
+                    if not ret:
+                        break
+
+                    results = model.predict(
+                        frame,
+                        conf=0.25,
+                        verbose=False
+                    )
+
+                    total_detections += count_detections(results)
+
+                    annotated = results[0].plot()
+
+                    writer.write(annotated)
+
+                    if frame_counter % 10 == 0:
+
+                        rgb = cv2.cvtColor(
+                            annotated,
+                            cv2.COLOR_BGR2RGB
+                        )
+
+                        preview.image(
+                            rgb,
+                            caption=f"Processing Frame {frame_counter}",
+                            use_container_width=True
+                        )
+
+                    frame_counter += 1
+
+                    if total_frames > 0:
+
+                        percent = int(
+                            frame_counter /
+                            total_frames *
+                            100
+                        )
+
+                        progress.progress(
+                            min(percent, 100)
+                        )
+
+                cap.release()
+
+                writer.release()
+
+                preview.empty()
+
+            elapsed = time.time() - start_time
+
+            progress.empty()
+
+            st.success("✅ Video Detection Completed!")
+
+            st.balloons()
+
+            st.markdown("---")
+
+            st.subheader("🎥 Processed Video")
+
+            video_file = open(
+                output_path,
+                "rb"
             )
 
-        with col2:
+            video_bytes = video_file.read()
 
-            st.subheader("🎯 Detection Result")
+            st.video(video_bytes)
 
-            st.image(
-                result,
-                use_container_width=True
+            st.markdown("### 📊 Statistics")
+
+            x, y, z = st.columns(3)
+
+            x.metric(
+                "🌾 Total Detections",
+                total_detections
             )
 
-        # Optional: Download Button
-        from io import BytesIO
+            y.metric(
+                "🎞 Frames",
+                frame_counter
+            )
 
-        buffer = BytesIO()
-        result.save(buffer, format="PNG")
+            z.metric(
+                "⏱ Time",
+                f"{elapsed:.2f} sec"
+            )
 
-        st.download_button(
-            "⬇️ Download Result",
-            data=buffer.getvalue(),
-            file_name="prediction.png",
-            mime="image/png"
-        )
+            with open(
+                output_path,
+                "rb"
+            ) as file:
+
+                st.download_button(
+
+                    "⬇️ Download Processed Video",
+
+                    data=file,
+
+                    file_name="prediction_video.mp4",
+
+                    mime="video/mp4"
+                )
 
 # ==========================================
 # Footer
@@ -322,6 +565,26 @@ if uploaded_file is not None:
 st.markdown("---")
 
 st.markdown(
-    "<center><h5>🌾 Built with Streamlit + YOLO + Ultralytics</h5></center>",
+    """
+    <center>
+        <h5>
+            🌾 Built with Streamlit + YOLOv11 + Ultralytics
+        </h5>
+    </center>
+    """,
     unsafe_allow_html=True
 )
+
+# ==========================================
+# Cleanup Temporary Video
+# ==========================================
+
+if is_video:
+
+    try:
+
+        if os.path.exists(video_path):
+            os.remove(video_path)
+
+    except:
+        pass
