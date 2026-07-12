@@ -216,17 +216,10 @@ with left:
     st.markdown("## 📤 Upload Image / Video")
 
     uploaded_file = st.file_uploader(
-        "",
-        type=[
-            "jpg",
-            "jpeg",
-            "png",
-            "mp4",
-            "avi",
-            "mov",
-            "mkv"
-        ]
-    )
+        "Upload an Image or Video",
+        type=["jpg","jpeg","png","mp4","avi","mov","mkv"],
+        label_visibility="collapsed"
+        )
 
 image = None
 video_path = None
